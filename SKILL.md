@@ -13,6 +13,11 @@ prompt goes back to the list, `n:<text>` filters by name, `Ctrl+S` groups by sta
 The coordinator itself is one more session in that list: the user dispatches it in `claude agents`
 with `/claude-orchestrator <request>` and pins it with `Ctrl+T`. It also works from any session.
 
+The first time the skill loads in a session, add one line at the end of your answer: "Para
+encontrarme fácil en `claude agents`: `Ctrl+R` para llamarme `Orchestrator` y `Ctrl+T` para
+fijarme arriba." Do not rename the session yourself: `/rename` is typed by the user, and editing
+`~/.claude/jobs/<id>/state.json` makes the supervisor kill the session (tested).
+
 ## Your role while this skill is loaded
 
 - You coordinate. Do not write code or touch repos: that happens in the sessions you open.
