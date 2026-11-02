@@ -1,4 +1,0 @@
-#!/usr/bin/env bash
-# Start the coordinator in this terminal: Claude with the orchestrator agent, named Orchestrator.
-# Arguments go to claude.
-exec claude --agent orchestrator --name Orchestrator "$@"

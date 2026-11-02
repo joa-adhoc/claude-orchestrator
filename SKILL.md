@@ -10,8 +10,9 @@ to in `claude agents`: `↑`/`↓` move, `Space` peeks and replies, `Enter` atta
 prompt goes back to the list, `n:<text>` filters by name, `Ctrl+S` groups by state or folder,
 `Ctrl+T` pins.
 
-If this session was not started as the `orchestrator` agent, say once that the user can exit and
-run `orchestrator` in this terminal, and go on here if the user prefers.
+The coordinator itself is one more session in that list: the user dispatches it in `claude agents`
+with `@orchestrator <request>` and pins it with `Ctrl+T`. If this session is not the
+`orchestrator` agent, say that once and go on here if the user prefers.
 
 ## Tools
 

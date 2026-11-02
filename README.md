@@ -10,7 +10,6 @@ orchestrator/
 ├── SKILL.md              rules and cases for the coordinator
 ├── agents/orchestrator.md  the coordinator agent
 ├── bin/
-│   ├── orchestrator      starts the coordinator in this terminal (the only one in PATH)
 │   ├── orch-new          one background session: name, topic color, first prompt
 │   ├── orch-list         sessions grouped by topic
 │   └── orch-find         find older sessions by task number or words
@@ -25,10 +24,14 @@ orchestrator/
 
 ## Use
 
-```bash
-orchestrator        # the coordinator, here
-claude agents       # all sessions, in another terminal or tab
+Open `claude agents` and dispatch the coordinator like any session, naming the agent:
+
 ```
+@orchestrator una sesión por subtarea abierta de la 78647
+```
+
+Pin it with `Ctrl+T` so it stays on top, and rename it with `Ctrl+R`. The sessions it opens show
+up in the same list.
 
 A session is named `<topic> › <task id> <name>`. Sessions of one topic share a color, set with
 `/color` as their first message; `orch-new` then stops and resumes the session with the task
