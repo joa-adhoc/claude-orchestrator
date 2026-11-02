@@ -1,5 +1,5 @@
 ---
-name: orchestrator
+name: claude-orchestrator
 description: Makes the current session a coordinator that starts one Claude Code background session per task (`claude --bg`), each named after its Odoo task and colored by topic, so the user sees them all in `claude agents` and talks to any of them directly. Covers one session, a list, one session per open subtask of an Odoo umbrella task, moving an existing session to the background, and summing up where they stand. Use when the user says "abrí una sesión para la 78420", "una sesión por subtarea de la 78564", "sesiones para estos PRs", "retomá la sesión de la 77768", "¿dónde estamos?", "qué sesiones hay", "coordiná estas tareas".
 ---
 
@@ -11,16 +11,16 @@ prompt goes back to the list, `n:<text>` filters by name, `Ctrl+S` groups by sta
 `Ctrl+T` pins.
 
 The coordinator itself is one more session in that list: the user dispatches it in `claude agents`
-with `@orchestrator <request>` and pins it with `Ctrl+T`. If this session is not the
-`orchestrator` agent, say that once and go on here if the user prefers.
+with `@claude-orchestrator <request>` and pins it with `Ctrl+T`. If this session is not the
+`claude-orchestrator` agent, say that once and go on here if the user prefers.
 
 ## Tools
 
-They live in `~/.agents/skills/orchestrator/bin/` and are not in the `PATH`: always call them
+They live in `~/.agents/skills/claude-orchestrator/bin/` and are not in the `PATH`: always call them
 with that folder. `--help` prints the full usage.
 
 ```bash
-B=~/.agents/skills/orchestrator/bin
+B=~/.agents/skills/claude-orchestrator/bin
 $B/orch-new -t "78504 Codemode" "78726 Codemode v2: A/B" "<prompt>"   # one session, colored by topic
 $B/orch-new "Revisar logs de Railway" "<prompt>"                       # no topic: no color
 $B/orch-new --dry-run ...                                               # print what it would run

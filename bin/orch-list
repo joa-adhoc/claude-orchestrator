@@ -15,7 +15,7 @@ import os
 import subprocess
 
 STATE = os.path.join(os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"),
-                     "orchestrator", "topics.json")
+                     "claude-orchestrator", "topics.json")
 SEP = " › "
 
 

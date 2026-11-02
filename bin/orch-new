@@ -27,7 +27,7 @@ import time
 
 COLORS = ["blue", "purple", "orange", "cyan", "pink", "green", "red", "yellow"]
 STATE = os.path.join(os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"),
-                     "orchestrator", "topics.json")
+                     "claude-orchestrator", "topics.json")
 SEP = " › "
 TRAILING = {"a", "al", "con", "de", "del", "el", "en", "la", "las", "lo", "los", "o", "para",
             "por", "sin", "un", "una", "y", "and", "for", "in", "of", "on", "the", "to", "with"}
