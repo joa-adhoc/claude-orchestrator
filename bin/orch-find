@@ -1,0 +1,158 @@
+#!/usr/bin/env python3
+"""Find agent sessions by task number or words, best match first.
+
+  orch-find [-a claude|codex|all] [-n LIMIT] TERM...
+
+One tab-separated line per session, no header:
+  last_used  runtime  session_id  context_tokens  match  title  cwd
+
+match is where every term was found: "title" (custom or AI title), "first" (first
+prompt) or "prompt" (any later prompt). Text that tools read is not searched.
+"""
+import argparse
+import glob
+import json
+import os
+import subprocess
+import time
+
+RANK = {"title": 0, "first": 1, "prompt": 2}
+
+
+def text_of(content):
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = [c.get("text", "") for c in content if isinstance(c, dict) and c.get("type") == "text"]
+        return "\n".join(parts)
+    return ""
+
+
+def candidates(pattern, terms):
+    """Files matching the glob that contain the longest term; grep is far faster than Python here."""
+    files = glob.glob(os.path.expanduser(pattern))
+    if not files:
+        return []
+    longest = max(terms, key=len)
+    out = subprocess.run(["grep", "-l", "-i", "-F", "--", longest, *files],
+                         capture_output=True, text=True).stdout
+    return out.splitlines()
+
+
+def lines_of(path):
+    try:
+        with open(path, errors="replace") as f:
+            yield from f
+    except OSError:
+        return
+
+
+def claude_sessions(terms):
+    for path in candidates("~/.claude/projects/*/*.jsonl", terms):
+        lines = lines_of(path)
+        s = {"runtime": "claude", "id": os.path.basename(path)[:-6], "mtime": os.path.getmtime(path),
+             "title": "", "ai_title": "", "prompts": [], "cwd": "", "tokens": 0}
+        last_assistant = None
+        for line in lines:
+            # Parsing every line is slow on long sessions: filter by type before json.loads.
+            if '"type":"assistant"' in line:
+                if '"isSidechain":true' not in line:
+                    last_assistant = line
+                continue
+            if not ('"type":"user"' in line or '"type":"custom-title"' in line or '"type":"ai-title"' in line):
+                continue
+            try:
+                d = json.loads(line)
+            except ValueError:
+                continue
+            t = d.get("type")
+            if t == "custom-title":
+                s["title"] = d.get("customTitle") or s["title"]
+            elif t == "ai-title":
+                s["ai_title"] = d.get("aiTitle") or s["ai_title"]
+            elif t == "user" and not d.get("isSidechain") and not d.get("isMeta"):
+                s["cwd"] = s["cwd"] or d.get("cwd", "")
+                content = (d.get("message") or {}).get("content")
+                if isinstance(content, list) and any(
+                        isinstance(c, dict) and c.get("type") == "tool_result" for c in content):
+                    continue
+                txt = text_of(content).strip()
+                if txt and not txt.startswith("<"):
+                    s["prompts"].append(txt)
+        if last_assistant:
+            try:
+                u = (json.loads(last_assistant).get("message") or {}).get("usage") or {}
+                s["tokens"] = sum(u.get(k) or 0 for k in (
+                    "input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
+            except ValueError:
+                pass
+        s["title"] = s["title"] or s["ai_title"]
+        yield s
+
+
+def codex_sessions(terms):
+    for path in candidates("~/.codex/sessions/*/*/*/*.jsonl", terms):
+        lines = lines_of(path)
+        s = {"runtime": "codex", "id": "", "mtime": os.path.getmtime(path),
+             "title": "", "prompts": [], "cwd": "", "tokens": 0}
+        for line in lines:
+            try:
+                d = json.loads(line)
+            except ValueError:
+                continue
+            p = d.get("payload") or {}
+            if d.get("type") == "session_meta":
+                s["id"], s["cwd"] = p.get("id", ""), p.get("cwd", "")
+            elif d.get("type") == "event_msg" and p.get("type") == "user_message":
+                txt = (p.get("message") or "").strip()
+                if txt:
+                    s["prompts"].append(txt)
+            elif d.get("type") == "event_msg" and p.get("type") == "token_count":
+                last = ((p.get("info") or {}).get("last_token_usage") or {})
+                s["tokens"] = last.get("input_tokens") or s["tokens"]
+        if s["id"]:
+            yield s
+
+
+def match(s, terms):
+    def has_all(text):
+        low = text.lower()
+        return all(t in low for t in terms)
+    if s["title"] and has_all(s["title"]):
+        return "title"
+    if s["prompts"] and has_all(s["prompts"][0]):
+        return "first"
+    if any(has_all(p) for p in s["prompts"][1:]):
+        return "prompt"
+    return None
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("-a", "--runtime", choices=["claude", "codex", "all"], default="all")
+    ap.add_argument("-n", "--limit", type=int, default=10)
+    ap.add_argument("terms", nargs="+")
+    args = ap.parse_args()
+    terms = [t.lower() for t in args.terms]
+
+    sources = []
+    if args.runtime in ("claude", "all"):
+        sources.append(claude_sessions(terms))
+    if args.runtime in ("codex", "all"):
+        sources.append(codex_sessions(terms))
+
+    hits = []
+    for src in sources:
+        for s in src:
+            m = match(s, terms)
+            if m:
+                hits.append((RANK[m], -s["mtime"], m, s))
+    hits.sort(key=lambda h: (h[0], h[1]))
+    for _, _, m, s in hits[:args.limit]:
+        title = (s["title"] or (s["prompts"][0] if s["prompts"] else "")).replace("\t", " ").replace("\n", " ")[:80]
+        print("\t".join([time.strftime("%Y-%m-%d %H:%M", time.localtime(s["mtime"])), s["runtime"], s["id"],
+                         str(s["tokens"]), m, title, s["cwd"]]))
+
+
+if __name__ == "__main__":
+    main()

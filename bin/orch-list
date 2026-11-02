@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+"""List Claude Code sessions grouped by topic, from `claude agents --json`.
+
+  orch-list [--all] [TEXT]
+
+  --all   also completed background sessions
+  TEXT    only sessions whose name contains TEXT (case-insensitive)
+
+One block per topic ("<topic> (<color>)", or "(no topic)"), then one tab-separated line per
+session: id  kind  state  status  name. A session's topic is the part of its name before " › ".
+"""
+import argparse
+import json
+import os
+import subprocess
+
+STATE = os.path.join(os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"),
+                     "orchestrator", "topics.json")
+SEP = " › "
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--all", action="store_true")
+    ap.add_argument("text", nargs="?", default="")
+    a = ap.parse_args()
+    cmd = ["claude", "agents", "--json"] + (["--all"] if a.all else [])
+    try:
+        sessions = json.loads(subprocess.run(cmd, capture_output=True, text=True, timeout=30).stdout or "[]")
+    except ValueError:
+        sessions = []
+    try:
+        with open(STATE) as f:
+            colors = json.load(f)
+    except (OSError, ValueError):
+        colors = {}
+    groups = {}
+    for s in sessions:
+        name = s.get("name") or ""
+        if a.text and a.text.lower() not in name.lower():
+            continue
+        topic = name.split(SEP)[0] if SEP in name else ""
+        groups.setdefault(topic, []).append(s)
+    for topic in sorted(groups, key=lambda t: (t == "", t)):
+        head = f"{topic} ({colors.get(topic, '-')})" if topic else "(no topic)"
+        print(head)
+        for s in groups[topic]:
+            print("\t".join(["  " + (s.get("id") or s.get("sessionId", "")[:8]), s.get("kind") or "-",
+                             s.get("state") or "-", s.get("status") or "-", s.get("name") or "-"]))
+
+
+if __name__ == "__main__":
+    main()
