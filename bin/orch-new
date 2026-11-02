@@ -3,7 +3,8 @@
 
   orch-new [-d DIR] [-t TOPIC] [-c COLOR] [-m MODEL] [-a AGENT] [--dry-run] NAME [PROMPT]
 
-  NAME     "<task id> <Odoo name>" or what the session does; long names are shortened
+  NAME     "<task id> <2 to 5 words that say what the task is about>", written by the caller;
+           only cut to fit 40 characters
   PROMPT   the task, sent as the user's first message (none: the session waits)
   -t       topic shared by several sessions ("78504 Codemode"): the session is named
            "<topic> › <name>" and takes the topic's color
@@ -35,10 +36,11 @@ TRAILING = {"a", "al", "con", "de", "del", "el", "en", "la", "las", "lo", "los",
 
 
 def shorten(text, max_words, max_chars):
+    """Only cut to fit: the caller writes a name that says what the task is about. Splitting at
+    ':' kept prefixes like "Tuqui" from "Tuqui: catálogo ..." and lost the meaning."""
     m = re.match(r"\s*(\d+)\s+(.*)", text)
     tid, text = (m.group(1), m.group(2)) if m else (None, text)
-    text = re.sub(r"^\s*(\[[^\]]*\]\s*)+", "", text)
-    text = re.split(r":| - | — |\(|,", text, maxsplit=1)[0].strip()
+    text = re.sub(r"^\s*(\[[^\]]*\]\s*)+", "", text).strip()
     words = text.split()[:max_words]
     while words and len(" ".join(words)) > max_chars:
         words.pop()
@@ -121,7 +123,7 @@ def main():
     a = ap.parse_args()
 
     cwd = os.path.abspath(os.path.expanduser(a.d))
-    name = shorten(a.name, 6, 32)
+    name = shorten(a.name, 7, 40)
     topic = shorten(a.t, 3, 20) if a.t else ""
     full = f"{topic}{SEP}{name}" if topic else name
     color = a.c or (topic_color(topic, a.dry_run) if topic else "")

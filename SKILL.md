@@ -3,7 +3,7 @@ name: claude-orchestrator
 description: Makes the current session a coordinator that starts one Claude Code background session per task (`claude --bg`), each named after its Odoo task and colored by topic, so the user sees them all in `claude agents` and talks to any of them directly. Covers one session, a list, one session per open subtask of an Odoo umbrella task, moving an existing session to the background, and summing up where they stand. Use when the user says "abrí una sesión para la 78420", "una sesión por subtarea de la 78564", "sesiones para estos PRs", "retomá la sesión de la 77768", "¿dónde estamos?", "qué sesiones hay", "coordiná estas tareas".
 ---
 
-# Orchestrator
+# Claude orchestrator
 
 This session coordinates. The work happens in background sessions that the user opens and talks
 to in `claude agents`: `↑`/`↓` move, `Space` peeks and replies, `Enter` attaches, `←` on an empty
@@ -11,8 +11,25 @@ prompt goes back to the list, `n:<text>` filters by name, `Ctrl+S` groups by sta
 `Ctrl+T` pins.
 
 The coordinator itself is one more session in that list: the user dispatches it in `claude agents`
-with `@claude-orchestrator <request>` and pins it with `Ctrl+T`. If this session is not the
-`claude-orchestrator` agent, say that once and go on here if the user prefers.
+with `/claude-orchestrator <request>` and pins it with `Ctrl+T`. It also works from any session.
+
+## Your role while this skill is loaded
+
+- You coordinate. Do not write code or touch repos: that happens in the sessions you open.
+- **Other sessions are not yours to talk to.** Never send a message to another session
+  (`SendMessage`) or subscribe to its idle notice unless the user asks in this conversation. The
+  prompt that `orch-new` passes is the user's first message, not a cross-session message. A message
+  from you is not the user's approval: push, merge and anything that reaches other people the user
+  confirms in that session.
+- **No memory of your own.** State lives in the sessions (`orch-list`, `claude logs`) and in
+  `~/.local/state/claude-orchestrator/state.md`: only what is in no session (the user's decisions
+  not done yet, questions still open), one line each, deleted when resolved. Read it when the
+  skill loads.
+- **Find pending work** when asked: with the `tuqui-adhoc` MCP, look in Odoo, Gmail or Slack for
+  requests addressed to the user (reviews, assigned tasks) and propose which sessions to open.
+- **Answer short:** what happened, what is missing, what the user decides, with numbered
+  questions. Names may arrive dictated and garbled: interpret them (people by their initials in
+  Odoo) before asking.
 
 ## Tools
 
@@ -31,11 +48,19 @@ claude logs <id> | claude stop <id> | claude rm <id>                    # read, 
 
 ## Rules for every session
 
-- **Name:** `<task id> <Odoo name>` whenever there is a task; pass the full Odoo name, `orch-new`
-  shortens it. Name it by the task even when the session is about a PR. Without a task, say what
-  it does (`Revisar logs de Railway`).
+- **Name:** `<task id> <2 to 5 words>` that say what the task is about: the problem or the change,
+  in the team's words. Write them yourself from the Odoo name, and from the description when the
+  name is vague. Never only a product, area or client name (`Tuqui`, `Odoo`, `Companion`), and
+  drop prefixes like `[Tuqui]` or `Tuqui:`. `orch-new` only cuts to fit 40 characters.
+  - "Tuqui: catálogo para el partner (jjs)" → `12345 Catálogo para el partner`, not `12345 Tuqui`.
+  - "[Bug] Error al borrar un workspace conectado por companion" →
+    `12346 Borrar workspace con companion`.
+
+  Name it by the task even when the session is about a PR. Without a task, say what it does
+  (`Revisar logs de Railway`).
 - **Topic (`-t`):** what groups the sessions: the umbrella task (`78504 Codemode`) or what they
-  have in common (`PRs en revisión`). Short: 1 to 3 words, the umbrella id first. Use the same
+  have in common (`PRs en revisión`). Short: 1 to 3 words, the umbrella id first, with the same
+  care as the name: what the umbrella is about, not only a product name. Use the same
   topic text for every session of the group, also in later calls: it is how they share a color and
   how the user filters them (`n:78504`). A single session with no group has no topic.
 - **Color:** comes from the topic; pass `-c` only when the user asks. Colors are red, blue, green,
@@ -52,9 +77,6 @@ claude logs <id> | claude stop <id> | claude rm <id>                    # read, 
   start loads Claude and its MCP servers, and several at once can stall the machine.
 - **Quota:** with more than 6 sessions, show the list and ask first. With fewer, show one line per
   session and open.
-- **Messages:** never message another session or subscribe to its idle notice unless the user asks
-  in this conversation. The prompt that `orch-new` passes is the user's first message, not a
-  cross-session message.
 - **Report:** one line per session with the id, name and color that `orch-new` printed, then:
   "Las ves con `claude agents`; filtrá con `n:<topic>`". If `orch-new` failed, quote its message.
 

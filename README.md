@@ -8,7 +8,6 @@ simulated keys: it uses only Claude Code's background sessions and agent view.
 ```
 claude-orchestrator/
 ├── SKILL.md              rules and cases for the coordinator
-├── agents/claude-orchestrator.md  the coordinator agent
 ├── bin/
 │   ├── orch-new          one background session: name, topic color, first prompt
 │   ├── orch-list         sessions grouped by topic
@@ -24,10 +23,10 @@ claude-orchestrator/
 
 ## Use
 
-Open `claude agents` and dispatch the coordinator like any session, naming the agent:
+Open `claude agents` and dispatch the coordinator like any session, starting with the skill:
 
 ```
-@claude-orchestrator una sesión por subtarea abierta de la 78647
+/claude-orchestrator una sesión por subtarea abierta de la 78647
 ```
 
 Pin it with `Ctrl+T` so it stays on top, and rename it with `Ctrl+R`. The sessions it opens show
