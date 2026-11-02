@@ -1,9 +1,10 @@
 # claude-orchestrator
 
 A coordinator session for Claude Code that starts one background session per task
-(`claude --bg`), named after the Odoo task and colored by topic. The user sees them all in
-`claude agents` and talks to any of them directly there. No terminal tabs, no window focus, no
-simulated keys: it uses only Claude Code's background sessions and agent view.
+(`claude --bg`), named after the Odoo task and always colored: by topic, or the least-used color
+for a lone session. The user sees them all in `claude agents` and talks to any of them directly
+there. No terminal tabs, no window focus, no simulated keys: it uses only Claude Code's background
+sessions and agent view.
 
 ```
 claude-orchestrator/
@@ -32,9 +33,10 @@ Open `claude agents` and dispatch the coordinator like any session, starting wit
 Pin it with `Ctrl+T` so it stays on top, and rename it with `Ctrl+R`. The sessions it opens show
 up in the same list.
 
-A session is named `<topic> › <task id> <name>`. Sessions of one topic share a color, set with
-`/color` as their first message; `orch-new` then stops and resumes the session with the task
-prompt, so the prompt arrives as the user's message. Topic colors are kept in
+A session is named `<topic> › <task id> <name>`. Every session has a color, and sessions of one
+topic share it. It is set with `/color` as the first message; `orch-new` then stops and resumes
+the session with the task prompt, so the prompt arrives as the user's message. Topic colors are
+kept in
 `~/.local/state/claude-orchestrator/topics.json`.
 
 Requires Claude Code with background sessions and agent view (2.1.139 or later), `python3`.

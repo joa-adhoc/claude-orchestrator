@@ -9,13 +9,13 @@
   -t       topic shared by several sessions ("78504 Codemode"): the session is named
            "<topic> › <name>" and takes the topic's color
   -c       color: red blue green yellow purple orange pink cyan (default: the topic's color, a free
-           one for a new topic, none without a topic)
+           one for a new topic; without a topic, the color least used by live sessions)
   -d       working directory (default: current)
   -m, -a   model and agent for the session
 
 Prints one line: id, name, color. `claude attach <id>` opens the session; `claude agents` lists all.
 
-The color needs `/color` as the session's first message, so a colored session starts twice: once
+Every session gets a color. It needs `/color` as the session's first message, so a session starts twice: once
 for /color, then stopped and resumed (same id) with the prompt, which arrives as the user's message.
 """
 import argparse
@@ -58,6 +58,10 @@ def agents():
         return []
 
 
+def least_used(used):
+    return min(COLORS, key=lambda c: (used.count(c), COLORS.index(c)))
+
+
 def topic_color(topic, dry):
     try:
         with open(STATE) as f:
@@ -68,13 +72,18 @@ def topic_color(topic, dry):
     used = [topics[t] for t in live if t in topics and t != topic]
     color = topics.get(topic)
     if color not in COLORS or color in used:
-        color = min(COLORS, key=lambda c: (used.count(c), COLORS.index(c)))
+        color = least_used(used)
     if not dry:
         topics[topic] = color
         os.makedirs(os.path.dirname(STATE), exist_ok=True)
         with open(STATE, "w") as f:
             json.dump(topics, f, ensure_ascii=False, indent=2)
     return color
+
+
+def free_color():
+    """A session with no topic still gets a color: the one least used by live sessions."""
+    return least_used([saved_color(s["id"]) for s in agents() if s.get("id")])
 
 
 def launch(args, cwd):
@@ -114,7 +123,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("-d", default=os.getcwd())
     ap.add_argument("-t", default="")
-    ap.add_argument("-c", default="", choices=[""] + COLORS)
+    ap.add_argument("-c", default="", choices=COLORS)
     ap.add_argument("-m", default="")
     ap.add_argument("-a", default="")
     ap.add_argument("--dry-run", action="store_true")
@@ -126,7 +135,7 @@ def main():
     name = shorten(a.name, 7, 40)
     topic = shorten(a.t, 3, 20) if a.t else ""
     full = f"{topic}{SEP}{name}" if topic else name
-    color = a.c or (topic_color(topic, a.dry_run) if topic else "")
+    color = a.c or (topic_color(topic, a.dry_run) if topic else free_color())
 
     base = ["claude", "--bg", "-n", full]
     if a.m:
@@ -135,33 +144,27 @@ def main():
         base += ["--agent", a.a]
 
     if a.dry_run:
-        if color:
-            print(f"# {cwd}: {' '.join(base)} '/color {color}'  → wait idle → claude stop → "
-                  f"claude --bg --resume <session id> <prompt>")
-        else:
-            print(f"# {cwd}: {' '.join(base)} <prompt>")
-        print(f"name: {full}\tcolor: {color or '-'}\tprompt: {a.prompt[:80] or '-'}")
+        print(f"# {cwd}: {' '.join(base)} '/color {color}'  → wait idle → claude stop → "
+              f"claude --bg --resume <session id> <prompt>")
+        print(f"name: {full}\tcolor: {color}\tprompt: {a.prompt[:80] or '-'}")
         return
 
-    if not color:
-        sid = launch(base + ([a.prompt] if a.prompt else []), cwd)
-    else:
-        sid = launch(base + [f"/color {color}"], cwd)
-        session_id = wait_color(sid, color)
-        if a.prompt:
-            subprocess.run(["claude", "stop", sid], capture_output=True, timeout=30)
-            wait_stopped(sid)
-            # No flags here: a background session keeps its saved options, and new flags would
-            # start a copy with another id instead of continuing this one.
-            again = launch(["claude", "--bg", "--resume", session_id, a.prompt], cwd)
-            if again != sid:
-                sys.exit(f"orch-new: the prompt went to a copy ({again}) instead of {sid}; "
-                         f"check both with `claude agents`")
-            time.sleep(2)
-            if saved_color(sid) != color:
-                print(f"orch-new: {sid} lost its color; in that session run `/color {color}`",
-                      file=sys.stderr)
-    print(f"{sid}\t{full}\t{color or '-'}")
+    sid = launch(base + [f"/color {color}"], cwd)
+    session_id = wait_color(sid, color)
+    if a.prompt:
+        subprocess.run(["claude", "stop", sid], capture_output=True, timeout=30)
+        wait_stopped(sid)
+        # No flags here: a background session keeps its saved options, and new flags would
+        # start a copy with another id instead of continuing this one.
+        again = launch(["claude", "--bg", "--resume", session_id, a.prompt], cwd)
+        if again != sid:
+            sys.exit(f"orch-new: the prompt went to a copy ({again}) instead of {sid}; "
+                     f"check both with `claude agents`")
+        time.sleep(2)
+        if saved_color(sid) != color:
+            print(f"orch-new: {sid} lost its color; in that session run `/color {color}`",
+                  file=sys.stderr)
+    print(f"{sid}\t{full}\t{color}")
 
 
 def wait_stopped(sid_short, seconds=20):
