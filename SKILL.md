@@ -1,6 +1,6 @@
 ---
 name: claude-orchestrator
-description: Makes the current session a coordinator that starts one Claude Code background session per task (`claude --bg`), each named after its Odoo task and colored by topic, so the user sees them all in `claude agents` and talks to any of them directly. Covers one session, a list, one session per open subtask of an Odoo umbrella task, moving an existing session to the background, and summing up where they stand. Use when the user says "abrí una sesión para la 78420", "una sesión por subtarea de la 78564", "sesiones para estos PRs", "retomá la sesión de la 77768", "¿dónde estamos?", "qué sesiones hay", "coordiná estas tareas".
+description: Makes the current session a coordinator that starts one Claude Code background session per task (`claude --bg`), each named after its Odoo task and always colored (by topic when it has one), so the user sees them all in `claude agents` and talks to any of them directly. Covers one session, a list, one session per open subtask of an Odoo umbrella task, moving an existing session to the background, and summing up where they stand. Use when the user says "abrí una sesión para la 78420", "una sesión por subtarea de la 78564", "sesiones para estos PRs", "retomá la sesión de la 77768", "¿dónde estamos?", "qué sesiones hay", "coordiná estas tareas".
 ---
 
 # Claude orchestrator
@@ -44,7 +44,7 @@ with that folder. `--help` prints the full usage.
 ```bash
 B=~/.agents/skills/claude-orchestrator/bin
 $B/orch-new -t "78504 Codemode" "78726 Codemode v2: A/B" "<prompt>"   # one session, colored by topic
-$B/orch-new "Revisar logs de Railway" "<prompt>"                       # no topic: no color
+$B/orch-new "Revisar logs de Railway" "<prompt>"                       # no topic: least-used color
 $B/orch-new --dry-run ...                                               # print what it would run
 $B/orch-list [--all] [TEXT]                                             # sessions grouped by topic
 $B/orch-find <number or words>                                          # find older sessions
@@ -68,8 +68,9 @@ claude logs <id> | claude stop <id> | claude rm <id>                    # read, 
   care as the name: what the umbrella is about, not only a product name. Use the same
   topic text for every session of the group, also in later calls: it is how they share a color and
   how the user filters them (`n:78504`). A single session with no group has no topic.
-- **Color:** comes from the topic; pass `-c` only when the user asks. Colors are red, blue, green,
-  yellow, purple, orange, pink and cyan.
+- **Color:** every session has one. With a topic, it is the topic's color; without one,
+  `orch-new` picks the color least used by live sessions. Pass `-c` only when the user asks.
+  Colors are red, blue, green, yellow, purple, orange, pink and cyan.
 - **Folder (`-d`):** the repo the request names; otherwise this session's folder.
 - **Prompt:** what the user asked for. For a task with no instruction:
 
