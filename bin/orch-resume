@@ -5,7 +5,7 @@
 
   SESSION  session id (from orch-find) or background id (from claude agents)
   NAME     "<task id> <2 to 5 words>", as in orch-new; -t and -c also as in orch-new. Without -t
-           and -c, a session that already has a color keeps it
+           and -c, a session keeps the color it had (saved, or last set in its transcript)
   PROMPT   the message the session gets as the user's: where the task stands and what is next
   -d       folder to resume from (default: the one the session started in)
 
@@ -39,25 +39,35 @@ def main():
     a = ap.parse_intermixed_args()
 
     key = a.session.strip()
-    r = next((s for s in o.agents(all_=True)
-              if key in (s.get("id"), s.get("sessionId")) or (s.get("sessionId") or "").startswith(key)), None)
-    if r and r.get("kind") != "background" and r.get("pid"):
-        o.die(TOOL, f"session {key} is open in a terminal ({r.get('kind')}); ask the user to close it, "
-                    f"then run this again")
+    if len(key) < 8:
+        o.die(TOOL, "pass the 8-character id from claude agents or the full session id")
+    matches = [s for s in o.agents(all_=True)
+               if key in (s.get("id"), s.get("sessionId")) or (s.get("sessionId") or "").startswith(key)]
+    if len({s.get("sessionId") for s in matches}) > 1:
+        o.die(TOOL, f"{key} matches more than one session; pass the full session id")
+    if any(s.get("kind") != "background" and s.get("pid") for s in matches):
+        o.die(TOOL, f"session {key} is open in a terminal; ask the user to close it, then run this again")
+    # Only a background row is the job to stop and resume; the live one wins over old ones.
+    r = max((s for s in matches if s.get("kind") == "background"),
+            key=lambda s: (bool(s.get("pid")), s.get("startedAt") or 0), default=None)
     if r and r.get("status") == "busy":
         o.die(TOOL, f"session {r['id']} ({r.get('name') or '-'}) is busy; not stopped. Run this again "
                     f"when it is idle")
 
-    session_id, started_in = o.find_transcript((r or {}).get("sessionId") or key)
+    session_id, started_in = o.find_transcript(
+        (r or {}).get("sessionId") or (matches[0].get("sessionId") if matches else "") or key)
     if not session_id:
         o.die(TOOL, f"no single transcript for {key}; find the session id with orch-find")
     cwd = os.path.abspath(os.path.expanduser(a.d)) if a.d else started_in or (r or {}).get("cwd")
     if not cwd:
         o.die(TOOL, f"cannot tell where {session_id} started; pass -d")
+    if a.d and started_in and cwd != started_in:
+        print(f"{TOOL}: {session_id} started in {started_in}; --resume may not find it from {cwd}",
+              file=sys.stderr)
     job = (r or {}).get("id")
 
     topic, full = o.full_name(a.name, a.t)
-    kept = o.saved(job, "color") if job and not (a.t or a.c) else ""
+    kept = "" if a.t or a.c else (o.saved(job, "color") if job else "") or o.last_color(session_id)
     color = kept or o.pick_color(a.c, topic, a.dry_run, skip=job or "")
 
     # /color before /rename: sent after it, /color overwrites the name in agent view.

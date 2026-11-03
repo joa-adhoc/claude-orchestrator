@@ -41,13 +41,14 @@ def full_name(name, topic):
     return topic, (f"{topic}{SEP}{name}" if topic else name)
 
 
-def agents(all_=False):
+def agents(all_=False, strict=False):
+    """Sessions from `claude agents --json`; on unreadable output, [] (or None with strict)."""
     cmd = ["claude", "agents", "--json"] + (["--all"] if all_ else [])
     out = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
     try:
         return json.loads(out.stdout or "[]")
     except ValueError:
-        return []
+        return None if strict else []
 
 
 def least_used(used):
@@ -123,13 +124,19 @@ def wait_saved(job, key, value, seconds):
     return None
 
 
-def color_in_transcript(session_id, color):
-    pattern = f'"agentColor":"{color}"'
-    for p in glob.glob(os.path.expanduser(f"~/.claude/projects/*/{session_id}*.jsonl")):
+def last_color(session_id):
+    """The last `/color` a session ran, from its transcripts (orphaned parts included, oldest first)."""
+    color = ""
+    paths = glob.glob(os.path.expanduser(f"~/.claude/projects/*/{session_id}*.jsonl"))
+    for p in sorted(paths, key=os.path.getmtime):
         with open(p, errors="replace") as f:
-            if any(pattern in line for line in f):
-                return True
-    return False
+            for line in f:
+                if line.startswith('{"type":"agent-color"'):
+                    try:
+                        color = json.loads(line).get("agentColor") or color
+                    except ValueError:
+                        pass
+    return color if color in COLORS else ""
 
 
 def wait_first_color(job, color, seconds):
@@ -143,7 +150,7 @@ def wait_first_color(job, color, seconds):
         s = row(job)
         sid = (s or {}).get("sessionId")
         if sid and s.get("status") == "idle" and (saved(job, "color") == color
-                                                  or color_in_transcript(sid, color)):
+                                                  or last_color(sid) == color):
             return sid
         time.sleep(1)
     return None
@@ -155,8 +162,9 @@ def stop(tool, job, seconds=20):
     subprocess.run(["claude", "stop", job], capture_output=True, timeout=30)
     deadline = time.time() + seconds
     while time.time() < deadline:
-        s = row(job)
-        if not s or s.get("state") == "stopped" or not s.get("pid"):
+        rows = agents(all_=True, strict=True)
+        s = next((r for r in rows or [] if r.get("id") == job), None)
+        if rows is not None and (not s or s.get("state") == "stopped" or not s.get("pid")):
             time.sleep(0.5)
             return
         time.sleep(0.5)
