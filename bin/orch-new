@@ -46,7 +46,7 @@ def main():
 
     cwd = os.path.abspath(os.path.expanduser(a.d))
     topic, full = o.full_name(a.name, a.t)
-    color = o.pick_color(a.c, topic, a.dry_run)
+    color = o.pick_color(a.c, topic)
 
     base = ["claude", "--bg", "-n", full]
     if a.m:

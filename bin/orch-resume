@@ -68,7 +68,7 @@ def main():
 
     topic, full = o.full_name(a.name, a.t)
     kept = "" if a.t or a.c else (o.saved(job, "color") if job else "") or o.last_color(session_id)
-    color = kept or o.pick_color(a.c, topic, a.dry_run, skip=job or "")
+    color = kept or o.pick_color(a.c, topic, skip=job or "")
 
     # /color before /rename: sent after it, /color overwrites the name in agent view.
     steps = []

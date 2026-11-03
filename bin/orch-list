@@ -1,22 +1,25 @@
 #!/usr/bin/env python3
-"""List Claude Code sessions grouped by topic, from `claude agents --json`.
+"""List Claude Code sessions grouped by topic, then the pending items of state.md.
 
   orch-list [--all] [TEXT]
 
   --all   also completed background sessions
-  TEXT    only sessions whose name contains TEXT (case-insensitive)
+  TEXT    only sessions whose name or topic contains TEXT (case-insensitive)
 
-One block per topic ("<topic> (<color>)", or "(no topic)"), then one tab-separated line per
-session: id  kind  state  status  name. A session's topic is the part of its name before " › ".
+One block per topic ("<topic> (<colors>)", or "(no topic)"), then one tab-separated line per
+session: id  kind  state  status  color  name. A session's topic is the part of its name before
+" › "; a session renamed without it keeps the topic of its last name that had one, marked
+"[renamed]". Colors are the ones agent view shows (saved by Claude Code), not a copy.
+
+Last, "pending (<path>)" and each line of state.md: what is in no session yet.
 """
 import argparse
-import json
 import os
-import subprocess
+import sys
 
-STATE = os.path.join(os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"),
-                     "claude-orchestrator", "topics.json")
-SEP = " › "
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+import orchlib as o  # noqa: E402
 
 
 def main():
@@ -24,29 +27,28 @@ def main():
     ap.add_argument("--all", action="store_true")
     ap.add_argument("text", nargs="?", default="")
     a = ap.parse_args()
-    cmd = ["claude", "agents", "--json"] + (["--all"] if a.all else [])
-    try:
-        sessions = json.loads(subprocess.run(cmd, capture_output=True, text=True, timeout=30).stdout or "[]")
-    except ValueError:
-        sessions = []
-    try:
-        with open(STATE) as f:
-            colors = json.load(f)
-    except (OSError, ValueError):
-        colors = {}
     groups = {}
-    for s in sessions:
+    for s in o.sessions(all_=a.all):
         name = s.get("name") or ""
-        if a.text and a.text.lower() not in name.lower():
+        if a.text and a.text.lower() not in f"{s['topic']} {name}".lower():
             continue
-        topic = name.split(SEP)[0] if SEP in name else ""
-        groups.setdefault(topic, []).append(s)
+        groups.setdefault(s["topic"], []).append(s)
     for topic in sorted(groups, key=lambda t: (t == "", t)):
-        head = f"{topic} ({colors.get(topic, '-')})" if topic else "(no topic)"
-        print(head)
+        colors = sorted({s["color"] for s in groups[topic] if s["color"]})
+        print(f"{topic} ({'/'.join(colors) or '-'})" if topic else "(no topic)")
         for s in groups[topic]:
+            name = (s.get("name") or "-") + ("  [renamed]" if s["renamed"] else "")
             print("\t".join(["  " + (s.get("id") or s.get("sessionId", "")[:8]), s.get("kind") or "-",
-                             s.get("state") or "-", s.get("status") or "-", s.get("name") or "-"]))
+                             s.get("state") or "-", s.get("status") or "-", s["color"] or "-", name]))
+    try:
+        with open(o.PENDING) as f:
+            pending = [line.rstrip() for line in f if line.strip()]
+    except OSError:
+        pending = []
+    if pending:
+        print(f"pending ({o.PENDING})")
+        for line in pending:
+            print("  " + line)
 
 
 if __name__ == "__main__":

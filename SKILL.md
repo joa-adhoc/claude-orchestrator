@@ -32,10 +32,12 @@ fijarme arriba." Do not rename the session yourself: `/rename` is typed by the u
   first message that `orch-resume` passes when the user asks to resume a session (see Cases). A
   message from you is not the user's approval: push, merge and anything that reaches other people
   the user confirms in that session.
-- **No memory of your own.** State lives in the sessions (`orch-list`, `claude logs`) and in
+- **No memory of your own.** State lives in the sessions: name, topic, color and state come from
+  Claude Code each time (`orch-list`, `claude logs`), never from a copy. The one exception is
   `~/.local/state/claude-orchestrator/state.md`: only what is in no session (the user's decisions
-  not done yet, questions still open), one line each, deleted when resolved. Read it when the
-  skill loads.
+  not done yet, questions still open), one line each. Create it with the first such item, edit it
+  with your file tools, and delete a line when it is resolved. `orch-list` prints it at the end:
+  run `orch-list` when the skill loads.
 - **Find pending work** when asked: with the `tuqui-adhoc` MCP, look in Odoo, Gmail or Slack for
   requests addressed to the user (reviews, assigned tasks) and propose which sessions to open.
 - **Answer short:** what happened, what is missing, what the user decides, with numbered
@@ -53,7 +55,7 @@ $B/orch-new -t "78504 Codemode" "78726 Codemode v2: A/B" "<prompt>"   # one sess
 $B/orch-new "Revisar logs de Railway" "<prompt>"                       # no topic: least-used color
 $B/orch-new --dry-run ...                                               # print what it would run
 $B/orch-resume <session id> -t "78504 Codemode" "78726 Codemode v2: A/B" "<message>"  # resume
-$B/orch-list [--all] [TEXT]                                             # sessions grouped by topic
+$B/orch-list [--all] [TEXT]                                             # sessions by topic, colors, pending
 $B/orch-find <number or words>                                          # find older sessions
 claude logs <id> | claude stop <id> | claude rm <id>                    # read, stop, delete
 ```
@@ -76,9 +78,12 @@ claude logs <id> | claude stop <id> | claude rm <id>                    # read, 
   have in common (`PRs en revisión`). Short: 1 to 3 words, the umbrella id first, with the same
   care as the name: what the umbrella is about, not only a product name. Use the same
   topic text for every session of the group, also in later calls: it is how they share a color and
-  how the user filters them (`n:78504`). A single session with no group has no topic.
-- **Color:** every session has one. With a topic, it is the topic's color; without one,
-  `orch-new` picks the color least used by live sessions. Pass `-c` only when the user asks.
+  how the user filters them (`n:78504`). A single session with no group has no topic. The topic is
+  the part of the name before ` › `; a session renamed without it keeps the topic of its last name
+  that had one, and `orch-list` marks it `[renamed]`.
+- **Color:** every session has one. With a topic, it is the color its sessions already have
+  (completed ones too); a new topic, or a session without one, gets the color least used by live
+  sessions. Pass `-c` only when the user asks.
   Colors are red, blue, green, yellow, purple, orange, pink and cyan.
 - **Folder (`-d`):** the repo the request names; otherwise this session's folder.
 - **Prompt:** what the user asked for. For a task with no instruction:
