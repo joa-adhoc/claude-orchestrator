@@ -11,9 +11,9 @@
 
 Prints one line: id, name, color.
 
-Steps, each one stop → resume → wait until saved: `/rename <name>`, `/color <color>`, then the
-prompt. A step that is already saved is skipped. A busy session is not stopped: it says so and exits.
-A session open in a terminal must be closed first.
+Steps, each one stop → resume → wait until saved: `/color <color>`, `/rename <name>`, then the
+prompt. A step that is already saved is skipped; after a `/color`, `/rename` always runs. A busy
+session is not stopped: it says so and exits. A session open in a terminal must be closed first.
 """
 import argparse
 import os
@@ -60,11 +60,12 @@ def main():
     kept = o.saved(job, "color") if job and not (a.t or a.c) else ""
     color = kept or o.pick_color(a.c, topic, a.dry_run, skip=job or "")
 
+    # /color before /rename: sent after it, /color overwrites the name in agent view.
     steps = []
-    if not job or o.saved(job, "name") != full:
-        steps.append((f"/rename {full}", "name", full))
     if not job or o.saved(job, "color") != color:
         steps.append((f"/color {color}", "color", color))
+    if steps or o.saved(job, "name") != full:
+        steps.append((f"/rename {full}", "name", full))
 
     if a.dry_run:
         plan = [cmd for cmd, _, _ in steps] + ([a.prompt[:80]] if a.prompt else [])

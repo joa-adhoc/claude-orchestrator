@@ -116,7 +116,7 @@ claude logs <id> | claude stop <id> | claude rm <id>                    # read, 
      ```
 
   4. Run `orch-resume <session id> [-t <topic>] "<task id> <name>" "<message>"`, with the same name
-     and topic rules as a new session. It renames and colors the session, then sends the message.
+     and topic rules as a new session. It colors and renames the session, then sends the message.
   5. If it says the session is busy, tell the user and stop: never stop a busy session. If it says
      the session is open in a terminal, ask the user to close it and run it again.
 - **Where things stand:** `orch-list`, then `claude logs <id>` only for the sessions the answer
@@ -131,8 +131,9 @@ claude logs <id> | claude stop <id> | claude rm <id>                    # read, 
 - `claude --bg --resume <id>` with any flag starts a copy with a new id: a background session
   keeps its saved options. Pass no flags when continuing one, so the name cannot go as `-n`.
 - A resumed session whose background job is gone (after `claude rm`, or one that never ran in the
-  background) comes back with no color and an automatic name. `/rename` and `/color` sent as the
-  message of a resume both work (tested): `orch-resume` sends them, one resume each.
+  background) comes back with no color and an automatic name. `/color` and `/rename` sent as the
+  message of a resume both work: `orch-resume` sends them one resume each, `/color` first. Sent
+  after `/rename`, `/color` overwrites the name in agent view.
 - A new session writes its first `/color` to the transcript but often not to `state.json` (what
   agent view shows) until it restarts. `orch-new` restarts it with `/color` once more.
 - `claude stop` on a session in state `done` leaves it `done`, not `stopped`: the tools check that

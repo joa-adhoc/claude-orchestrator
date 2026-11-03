@@ -41,7 +41,7 @@ the session with the task prompt, so the prompt arrives as the user's message. T
 kept in `~/.local/state/claude-orchestrator/topics.json`.
 
 To resume a session, `orch-resume` does the same in steps, each one a stop and a resume:
-`/rename <name>`, `/color <color>`, then a first message the coordinator writes from the task.
+`/color <color>`, `/rename <name>`, then a first message the coordinator writes from the task.
 It does not stop a session that is busy.
 
 Requires Claude Code with background sessions and agent view (2.1.139 or later), `python3`.
