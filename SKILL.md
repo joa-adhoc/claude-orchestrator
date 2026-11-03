@@ -1,6 +1,6 @@
 ---
 name: claude-orchestrator
-description: Makes the current session a coordinator that starts one Claude Code background session per task (`claude --bg`), each named after its Odoo task and always colored (by topic when it has one), so the user sees them all in `claude agents` and talks to any of them directly. Covers one session, a list, one session per open subtask of an Odoo umbrella task, moving an existing session to the background, and summing up where they stand. Use when the user says "abrí una sesión para la 78420", "una sesión por subtarea de la 78564", "sesiones para estos PRs", "retomá la sesión de la 77768", "¿dónde estamos?", "qué sesiones hay", "coordiná estas tareas".
+description: Makes the current session a coordinator that starts one Claude Code background session per task (`claude --bg`), each named after its Odoo task and always colored (by topic when it has one), so the user sees them all in `claude agents` and talks to any of them directly. Covers one session, a list, one session per open subtask of an Odoo umbrella task, resuming a session (renamed, colored and briefed from its task), and summing up where they stand. It never works on a task itself. Use when the user says "abrí una sesión para la 78420", "una sesión por subtarea de la 78564", "sesiones para estos PRs", "retomá la sesión de la 77768", "¿dónde estamos?", "qué sesiones hay", "coordiná estas tareas".
 ---
 
 # Claude orchestrator
@@ -20,12 +20,18 @@ fijarme arriba." Do not rename the session yourself: `/rename` is typed by the u
 
 ## Your role while this skill is loaded
 
-- You coordinate. Do not write code or touch repos: that happens in the sessions you open.
+- **You never start a task in this session.** No code, no repos (no worktrees, branches, commits),
+  no writes to Odoo (notes, stages, timesheets), no actions on GitHub (PRs, comments, reviews,
+  approvals). You read what you need to name and brief a session, and you answer simple things:
+  where sessions stand, links. Everything else goes to a session: a new one with `orch-new`, or the
+  task's own session with `orch-resume`. If the user asks you to do it here, open the session and
+  say so in one line.
 - **Other sessions are not yours to talk to.** Never send a message to another session
-  (`SendMessage`) or subscribe to its idle notice unless the user asks in this conversation. The
-  prompt that `orch-new` passes is the user's first message, not a cross-session message. A message
-  from you is not the user's approval: push, merge and anything that reaches other people the user
-  confirms in that session.
+  (`SendMessage`) or subscribe to its idle notice unless the user asks in this conversation. Two
+  messages are the user's, not cross-session messages: the prompt that `orch-new` passes, and the
+  first message that `orch-resume` passes when the user asks to resume a session (see Cases). A
+  message from you is not the user's approval: push, merge and anything that reaches other people
+  the user confirms in that session.
 - **No memory of your own.** State lives in the sessions (`orch-list`, `claude logs`) and in
   `~/.local/state/claude-orchestrator/state.md`: only what is in no session (the user's decisions
   not done yet, questions still open), one line each, deleted when resolved. Read it when the
@@ -46,6 +52,7 @@ B=~/.agents/skills/claude-orchestrator/bin
 $B/orch-new -t "78504 Codemode" "78726 Codemode v2: A/B" "<prompt>"   # one session, colored by topic
 $B/orch-new "Revisar logs de Railway" "<prompt>"                       # no topic: least-used color
 $B/orch-new --dry-run ...                                               # print what it would run
+$B/orch-resume <session id> -t "78504 Codemode" "78726 Codemode v2: A/B" "<message>"  # resume
 $B/orch-list [--all] [TEXT]                                             # sessions grouped by topic
 $B/orch-find <number or words>                                          # find older sessions
 claude logs <id> | claude stop <id> | claude rm <id>                    # read, stop, delete
@@ -53,6 +60,8 @@ claude logs <id> | claude stop <id> | claude rm <id>                    # read, 
 
 ## Rules for every session
 
+- **Only through the tools:** open a session with `orch-new` and resume one with `orch-resume`.
+  Never run `claude --bg` by hand: those two are the only paths that set the name and the color.
 - **Name:** `<task id> <2 to 5 words>` that say what the task is about: the problem or the change,
   in the team's words. Write them yourself from the Odoo name, and from the description when the
   name is vague. Never only a product, area or client name (`Tuqui`, `Odoo`, `Companion`), and
@@ -83,8 +92,9 @@ claude logs <id> | claude stop <id> | claude rm <id>                    # read, 
   start loads Claude and its MCP servers, and several at once can stall the machine.
 - **Quota:** with more than 6 sessions, show the list and ask first. With fewer, show one line per
   session and open.
-- **Report:** one line per session with the id, name and color that `orch-new` printed, then:
-  "Las ves con `claude agents`; filtrá con `n:<topic>`". If `orch-new` failed, quote its message.
+- **Report:** one line per session with the id, name and color that `orch-new` or `orch-resume`
+  printed, then: "Las ves con `claude agents`; filtrá con `n:<topic>`". If a tool failed, quote its
+  message.
 
 ## Cases
 
@@ -94,11 +104,21 @@ claude logs <id> | claude stop <id> | claude rm <id>                    # read, 
   (`parent_id = <umbrella>`, fields `id, name, state`), loading first the task skill the
   `tuqui-adhoc` catalogue names. Leave out `state` in `1_done` or `1_canceled` and say which.
   Topic: `<umbrella id> <1 to 3 words>`. One session per open subtask.
-- **Resume an older session:** `orch-find <number or words>`; take the first line if `match` is
-  `title` or `first`, otherwise show the first 3 and ask. If its tab or terminal is still open,
-  ask the user to close it first. Then `claude --bg --resume <session id>` from its `cwd` moves it
-  to the background; it keeps its old name. A session already in `claude agents` needs nothing:
-  the user opens it there.
+- **Resume a session** (older, or already in `claude agents`):
+  1. Find it: `orch-find <number or words>`; take the first line if `match` is `title` or `first`,
+     otherwise show the first 3 and ask. A session in `claude agents` also takes its id from there.
+  2. Read the task with the Odoo MCP (name, description, chatter) and its PRs (`gh pr view`,
+     `gh pr checks`). Read only.
+  3. Write the first message from what you read: where the task stands and what is next, with links.
+
+     ```text
+     Resuming task https://www.adhoc.inc/odoo/project.task/<id> (<short name>). Where it stands: <1 to 3 lines from the task, the chatter and the PRs, with links>. What is next: <1 or 2 lines>. Check this against the code and the PRs, tell me in 5 lines what changed, and wait for my OK before you change code or write to Odoo.
+     ```
+
+  4. Run `orch-resume <session id> [-t <topic>] "<task id> <name>" "<message>"`, with the same name
+     and topic rules as a new session. It renames and colors the session, then sends the message.
+  5. If it says the session is busy, tell the user and stop: never stop a busy session. If it says
+     the session is open in a terminal, ask the user to close it and run it again.
 - **Where things stand:** `orch-list`, then `claude logs <id>` only for the sessions the answer
   needs.
 - **Done:** a task with `state` `1_done` or `1_canceled` in Odoo: propose `claude stop` and
@@ -109,7 +129,17 @@ claude logs <id> | claude stop <id> | claude rm <id>                    # read, 
 - `claude agents --json` reports `status: idle` when a session finished its turn; its `state`
   field can still say `working`.
 - `claude --bg --resume <id>` with any flag starts a copy with a new id: a background session
-  keeps its saved options. Pass no flags when continuing one.
+  keeps its saved options. Pass no flags when continuing one, so the name cannot go as `-n`.
+- A resumed session whose background job is gone (after `claude rm`, or one that never ran in the
+  background) comes back with no color and an automatic name. `/rename` and `/color` sent as the
+  message of a resume both work (tested): `orch-resume` sends them, one resume each.
+- A new session writes its first `/color` to the transcript but often not to `state.json` (what
+  agent view shows) until it restarts. `orch-new` restarts it with `/color` once more.
+- `claude stop` on a session in state `done` leaves it `done`, not `stopped`: the tools check that
+  the process is gone.
+- `Workspace not trusted`: Claude Code has not trusted that folder yet. The user opens `claude` once
+  there and accepts the prompt; the tools say so.
+- A background id does not always match the start of its session id: `orch-resume` takes either.
 - `/color` takes only the colors above (no `magenta`). A session asked through a message to do
   something odd may refuse it as not coming from the user.
 - Each session uses the subscription quota on its own.
