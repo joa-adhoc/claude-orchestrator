@@ -1,4 +1,4 @@
-"""Shared by orch-new and orch-resume: names, colors and the stop/resume steps of a background session."""
+"""Shared by the orch-* tools: names, colors, topics and the stop/resume steps of a background session."""
 import glob
 import json
 import os
@@ -8,8 +8,8 @@ import sys
 import time
 
 COLORS = ["blue", "purple", "orange", "cyan", "pink", "green", "red", "yellow"]
-STATE = os.path.join(os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"),
-                     "claude-orchestrator", "topics.json")
+PENDING = os.path.join(os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"),
+                       "claude-orchestrator", "state.md")
 SEP = " › "
 JOBS = os.path.expanduser("~/.claude/jobs")
 TRAILING = {"a", "al", "con", "de", "del", "el", "en", "la", "las", "lo", "los", "o", "para",
@@ -55,32 +55,58 @@ def least_used(used):
     return min(COLORS, key=lambda c: (used.count(c), COLORS.index(c)))
 
 
-def topic_color(topic, dry):
-    try:
-        with open(STATE) as f:
-            topics = json.load(f)
-    except (OSError, ValueError):
-        topics = {}
-    live = {s.get("name", "").split(SEP)[0] for s in agents() if SEP in (s.get("name") or "")}
-    used = [topics[t] for t in live if t in topics and t != topic]
-    color = topics.get(topic)
-    if color not in COLORS or color in used:
-        color = least_used(used)
-    if not dry:
-        topics[topic] = color
-        os.makedirs(os.path.dirname(STATE), exist_ok=True)
-        with open(STATE, "w") as f:
-            json.dump(topics, f, ensure_ascii=False, indent=2)
-    return color
+def last_titled_topic(session_id):
+    """The topic of the last name with one that a session had, from its transcripts: a session
+    renamed by hand without the topic still belongs to it."""
+    paths = glob.glob(os.path.expanduser(f"~/.claude/projects/*/{session_id}*.jsonl"))
+    if not session_id or not paths:
+        return ""
+    out = subprocess.run(["grep", "-h", "-F", '{"type":"custom-title"', *paths],
+                         capture_output=True, text=True).stdout
+    topic = ""
+    for line in out.splitlines():
+        try:
+            title = json.loads(line).get("customTitle") or ""
+        except ValueError:
+            continue
+        if SEP in title:
+            topic = title.split(SEP)[0]
+    return topic
+
+
+def sessions(all_=False):
+    """`claude agents --json` rows plus what agent view shows: `color` (saved), `topic` (the part of
+    the name before " › ", or of an earlier name) and `renamed` (the topic came from an earlier name)."""
+    rows = agents(all_)
+    for s in rows:
+        name = s.get("name") or ""
+        s["color"] = saved(s["id"], "color") if s.get("id") else ""
+        s["renamed"] = False
+        if SEP in name:
+            s["topic"] = name.split(SEP)[0]
+        else:
+            s["topic"] = last_titled_topic(s.get("sessionId"))
+            s["renamed"] = bool(s["topic"])
+    return rows
+
+
+def topic_color(topic, skip=""):
+    """A topic's color is the one its sessions have (completed ones too); a topic with none takes
+    the color least used by live sessions. No file keeps it: the sessions are the state."""
+    mine = [s["color"] for s in sessions(all_=True)
+            if s["topic"] == topic and s["color"] in COLORS and s.get("id") != skip]
+    if mine:
+        return max(set(mine), key=lambda c: (mine.count(c), -COLORS.index(c)))
+    return free_color(skip)
 
 
 def free_color(skip=""):
-    """A session with no topic still gets a color: the one least used by the other live sessions."""
-    return least_used([saved(s["id"], "color") for s in agents() if s.get("id") and s["id"] != skip])
+    """The color least used by the other live sessions."""
+    return least_used([s["color"] for s in sessions() if s.get("id") and s["id"] != skip])
 
 
-def pick_color(color, topic, dry, skip=""):
-    return color or (topic_color(topic, dry) if topic else free_color(skip))
+def pick_color(color, topic, skip=""):
+    return color or (topic_color(topic, skip) if topic else free_color(skip))
 
 
 def saved(job, key):
