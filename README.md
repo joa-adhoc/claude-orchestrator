@@ -11,8 +11,10 @@ claude-orchestrator/
 ├── SKILL.md              rules and cases for the coordinator
 ├── bin/
 │   ├── orch-new          one background session: name, topic color, first prompt
+│   ├── orch-resume       resume a session: name, color, first message
 │   ├── orch-list         sessions grouped by topic
-│   └── orch-find         find older sessions by task number or words
+│   ├── orch-find         find older sessions by task number or words
+│   └── orchlib.py        shared by orch-new and orch-resume
 └── install.sh
 ```
 
@@ -36,7 +38,10 @@ up in the same list.
 A session is named `<topic> › <task id> <name>`. Every session has a color, and sessions of one
 topic share it. It is set with `/color` as the first message; `orch-new` then stops and resumes
 the session with the task prompt, so the prompt arrives as the user's message. Topic colors are
-kept in
-`~/.local/state/claude-orchestrator/topics.json`.
+kept in `~/.local/state/claude-orchestrator/topics.json`.
+
+To resume a session, `orch-resume` does the same in steps, each one a stop and a resume:
+`/color <color>`, `/rename <name>`, then a first message the coordinator writes from the task.
+It does not stop a session that is busy.
 
 Requires Claude Code with background sessions and agent view (2.1.139 or later), `python3`.

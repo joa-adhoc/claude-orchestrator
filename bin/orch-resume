@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+"""Resume a Claude Code session in the background: standard name, color, and a first message.
+
+  orch-resume [-d DIR] [-t TOPIC] [-c COLOR] [--dry-run] SESSION NAME [PROMPT]
+
+  SESSION  session id (from orch-find) or background id (from claude agents)
+  NAME     "<task id> <2 to 5 words>", as in orch-new; -t and -c also as in orch-new. Without -t
+           and -c, a session keeps the color it had (saved, or last set in its transcript)
+  PROMPT   the message the session gets as the user's: where the task stands and what is next
+  -d       folder to resume from (default: the one the session started in)
+
+Prints one line: id, name, color.
+
+Steps, each one stop → resume → wait until saved: `/color <color>`, `/rename <name>`, then the
+prompt. A step that is already saved is skipped; after a `/color`, `/rename` always runs. A busy
+session is not stopped: it says so and exits. A session open in a terminal must be closed first.
+"""
+import argparse
+import os
+import sys
+import time
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+import orchlib as o  # noqa: E402
+
+TOOL = "orch-resume"
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("-d", default="")
+    ap.add_argument("-t", default="")
+    ap.add_argument("-c", default="", choices=o.COLORS)
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("session")
+    ap.add_argument("name")
+    ap.add_argument("prompt", nargs="?", default="")
+    a = ap.parse_intermixed_args()
+
+    key = a.session.strip()
+    if len(key) < 8:
+        o.die(TOOL, "pass the 8-character id from claude agents or the full session id")
+    matches = [s for s in o.agents(all_=True)
+               if key in (s.get("id"), s.get("sessionId")) or (s.get("sessionId") or "").startswith(key)]
+    if len({s.get("sessionId") for s in matches}) > 1:
+        o.die(TOOL, f"{key} matches more than one session; pass the full session id")
+    if any(s.get("kind") != "background" and s.get("pid") for s in matches):
+        o.die(TOOL, f"session {key} is open in a terminal; ask the user to close it, then run this again")
+    # Only a background row is the job to stop and resume; the live one wins over old ones.
+    r = max((s for s in matches if s.get("kind") == "background"),
+            key=lambda s: (bool(s.get("pid")), s.get("startedAt") or 0), default=None)
+    if r and r.get("status") == "busy":
+        o.die(TOOL, f"session {r['id']} ({r.get('name') or '-'}) is busy; not stopped. Run this again "
+                    f"when it is idle")
+
+    session_id, started_in = o.find_transcript(
+        (r or {}).get("sessionId") or (matches[0].get("sessionId") if matches else "") or key)
+    if not session_id:
+        o.die(TOOL, f"no single transcript for {key}; find the session id with orch-find")
+    cwd = os.path.abspath(os.path.expanduser(a.d)) if a.d else started_in or (r or {}).get("cwd")
+    if not cwd:
+        o.die(TOOL, f"cannot tell where {session_id} started; pass -d")
+    if a.d and started_in and cwd != started_in:
+        print(f"{TOOL}: {session_id} started in {started_in}; --resume may not find it from {cwd}",
+              file=sys.stderr)
+    job = (r or {}).get("id")
+
+    topic, full = o.full_name(a.name, a.t)
+    kept = "" if a.t or a.c else (o.saved(job, "color") if job else "") or o.last_color(session_id)
+    color = kept or o.pick_color(a.c, topic, a.dry_run, skip=job or "")
+
+    # /color before /rename: sent after it, /color overwrites the name in agent view.
+    steps = []
+    if not job or o.saved(job, "color") != color:
+        steps.append((f"/color {color}", "color", color))
+    if steps or o.saved(job, "name") != full:
+        steps.append((f"/rename {full}", "name", full))
+
+    if a.dry_run:
+        plan = [cmd for cmd, _, _ in steps] + ([a.prompt[:80]] if a.prompt else [])
+        print(f"# {cwd}: claude --bg --resume {session_id}, one step at a time (stop → resume → wait): "
+              + " → ".join(repr(p) for p in plan or ["nothing to do"]))
+        print(f"id: {job or '-'}\tname: {full}\tcolor: {color}")
+        return
+
+    for cmd, k, want in steps:
+        job = o.apply(TOOL, job, session_id, cmd, k, want, cwd)
+    if a.prompt:
+        if job and (o.row(job) or {}).get("pid"):
+            o.stop(TOOL, job)
+        job = o.resume(TOOL, session_id, a.prompt, cwd, job)
+        time.sleep(2)
+    for k, want in (("name", full), ("color", color)):
+        if o.saved(job, k) != want:
+            print(f"{TOOL}: {job} lost its {k}; run this again once it is idle", file=sys.stderr)
+    print(f"{job}\t{full}\t{color}")
+
+
+if __name__ == "__main__":
+    main()

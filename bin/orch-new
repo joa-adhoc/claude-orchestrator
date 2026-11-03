@@ -10,132 +10,43 @@
            "<topic> › <name>" and takes the topic's color
   -c       color: red blue green yellow purple orange pink cyan (default: the topic's color, a free
            one for a new topic; without a topic, the color least used by live sessions)
-  -d       working directory (default: current)
+  -d       working directory (default: current); Claude Code must trust it
   -m, -a   model and agent for the session
 
 Prints one line: id, name, color. `claude attach <id>` opens the session; `claude agents` lists all.
 
-Every session gets a color. It needs `/color` as the session's first message, so a session starts twice: once
-for /color, then stopped and resumed (same id) with the prompt, which arrives as the user's message.
+Every session gets a name and a color. The color needs `/color` as the session's first message, so
+a session starts twice: once for /color, then stopped and resumed (same id) with the prompt, which
+arrives as the user's message. A new session often keeps the color only in its transcript: then
+it is stopped and resumed with `/color` once more before the prompt.
 """
 import argparse
-import json
 import os
-import re
-import subprocess
 import sys
 import time
 
-COLORS = ["blue", "purple", "orange", "cyan", "pink", "green", "red", "yellow"]
-STATE = os.path.join(os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"),
-                     "claude-orchestrator", "topics.json")
-SEP = " › "
-JOBS = os.path.expanduser("~/.claude/jobs")
-TRAILING = {"a", "al", "con", "de", "del", "el", "en", "la", "las", "lo", "los", "o", "para",
-            "por", "sin", "un", "una", "y", "and", "for", "in", "of", "on", "the", "to", "with"}
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+import orchlib as o  # noqa: E402
 
-
-def shorten(text, max_words, max_chars):
-    """Only cut to fit: the caller writes a name that says what the task is about. Splitting at
-    ':' kept prefixes like "Tuqui" from "Tuqui: catálogo ..." and lost the meaning."""
-    m = re.match(r"\s*(\d+)\s+(.*)", text)
-    tid, text = (m.group(1), m.group(2)) if m else (None, text)
-    text = re.sub(r"^\s*(\[[^\]]*\]\s*)+", "", text).strip()
-    words = text.split()[:max_words]
-    while words and len(" ".join(words)) > max_chars:
-        words.pop()
-    while len(words) > 1 and words[-1].lower() in TRAILING:
-        words.pop()
-    short = " ".join(words) or text[:max_chars]
-    return f"{tid} {short}" if tid else short
-
-
-def agents():
-    out = subprocess.run(["claude", "agents", "--json"], capture_output=True, text=True, timeout=30)
-    try:
-        return json.loads(out.stdout or "[]")
-    except ValueError:
-        return []
-
-
-def least_used(used):
-    return min(COLORS, key=lambda c: (used.count(c), COLORS.index(c)))
-
-
-def topic_color(topic, dry):
-    try:
-        with open(STATE) as f:
-            topics = json.load(f)
-    except (OSError, ValueError):
-        topics = {}
-    live = {s.get("name", "").split(SEP)[0] for s in agents() if SEP in (s.get("name") or "")}
-    used = [topics[t] for t in live if t in topics and t != topic]
-    color = topics.get(topic)
-    if color not in COLORS or color in used:
-        color = least_used(used)
-    if not dry:
-        topics[topic] = color
-        os.makedirs(os.path.dirname(STATE), exist_ok=True)
-        with open(STATE, "w") as f:
-            json.dump(topics, f, ensure_ascii=False, indent=2)
-    return color
-
-
-def free_color():
-    """A session with no topic still gets a color: the one least used by live sessions."""
-    return least_used([saved_color(s["id"]) for s in agents() if s.get("id")])
-
-
-def launch(args, cwd):
-    out = subprocess.run(args, capture_output=True, text=True, cwd=cwd, timeout=120)
-    m = re.search(r"attach ([0-9a-f]{8})", out.stdout + out.stderr)
-    if not m:
-        sys.exit(f"orch-new: claude did not start the session:\n{out.stdout}{out.stderr}")
-    return m.group(1)
-
-
-def saved_color(sid_short):
-    """The color agent view shows, as Claude Code saved it for a background session."""
-    try:
-        with open(os.path.join(JOBS, sid_short, "state.json")) as f:
-            return json.load(f).get("color") or ""
-    except (OSError, ValueError):
-        return ""
-
-
-def wait_color(sid_short, color, seconds=90):
-    """Wait until /color is saved and the session is idle; return its full session id.
-
-    A new session reports status idle before it reads its first message, and the screen shows
-    "Session color set" before the color is saved: stopping it then loses the color.
-    """
-    deadline = time.time() + seconds
-    while time.time() < deadline:
-        if saved_color(sid_short) == color:
-            for s in agents():
-                if s.get("id") == sid_short and s.get("status") == "idle":
-                    return s.get("sessionId")
-        time.sleep(1)
-    sys.exit(f"orch-new: session {sid_short} did not save /color in {seconds}s; check `claude logs {sid_short}`")
+TOOL = "orch-new"
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("-d", default=os.getcwd())
     ap.add_argument("-t", default="")
-    ap.add_argument("-c", default="", choices=COLORS)
+    ap.add_argument("-c", default="", choices=o.COLORS)
     ap.add_argument("-m", default="")
     ap.add_argument("-a", default="")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("name")
     ap.add_argument("prompt", nargs="?", default="")
-    a = ap.parse_args()
+    a = ap.parse_intermixed_args()
 
     cwd = os.path.abspath(os.path.expanduser(a.d))
-    name = shorten(a.name, 7, 40)
-    topic = shorten(a.t, 3, 20) if a.t else ""
-    full = f"{topic}{SEP}{name}" if topic else name
-    color = a.c or (topic_color(topic, a.dry_run) if topic else free_color())
+    topic, full = o.full_name(a.name, a.t)
+    color = o.pick_color(a.c, topic, a.dry_run)
 
     base = ["claude", "--bg", "-n", full]
     if a.m:
@@ -149,39 +60,21 @@ def main():
         print(f"name: {full}\tcolor: {color}\tprompt: {a.prompt[:80] or '-'}")
         return
 
-    sid = launch(base + [f"/color {color}"], cwd)
-    session_id = wait_color(sid, color)
+    job = o.launch(TOOL, base + [f"/color {color}"], cwd)
+    session_id = o.wait_first_color(job, color, 90)
+    if not session_id:
+        o.die(TOOL, f"session {job} did not run /color in 90s; check `claude logs {job}`")
+    if o.saved(job, "color") != color:
+        job = o.apply(TOOL, job, session_id, f"/color {color}", "color", color, cwd)
     if a.prompt:
-        subprocess.run(["claude", "stop", sid], capture_output=True, timeout=30)
-        wait_stopped(sid)
-        # No flags here: a background session keeps its saved options, and new flags would
-        # start a copy with another id instead of continuing this one.
-        again = launch(["claude", "--bg", "--resume", session_id, a.prompt], cwd)
-        if again != sid:
-            sys.exit(f"orch-new: the prompt went to a copy ({again}) instead of {sid}; "
-                     f"check both with `claude agents`")
+        o.stop(TOOL, job)
+        o.resume(TOOL, session_id, a.prompt, cwd, job)
         time.sleep(2)
-        if saved_color(sid) != color:
-            print(f"orch-new: {sid} lost its color; in that session run `/color {color}`",
-                  file=sys.stderr)
-    print(f"{sid}\t{full}\t{color}")
-
-
-def wait_stopped(sid_short, seconds=20):
-    """`claude stop` returns before the process exits; resuming before that starts a copy."""
-    deadline = time.time() + seconds
-    while time.time() < deadline:
-        out = subprocess.run(["claude", "agents", "--json", "--all"], capture_output=True, text=True,
-                             timeout=30).stdout
-        try:
-            rows = json.loads(out or "[]")
-        except ValueError:
-            rows = []
-        if any(s.get("id") == sid_short and s.get("state") == "stopped" for s in rows):
-            time.sleep(0.5)
-            return
-        time.sleep(0.5)
-    sys.exit(f"orch-new: session {sid_short} did not stop in {seconds}s")
+    for key, want in (("name", full), ("color", color)):
+        if o.saved(job, key) != want:
+            print(f"{TOOL}: {job} lost its {key}; fix it with `orch-resume {job} \"{a.name}\"` "
+                  f"(same -t and -c) once it is idle", file=sys.stderr)
+    print(f"{job}\t{full}\t{color}")
 
 
 if __name__ == "__main__":
