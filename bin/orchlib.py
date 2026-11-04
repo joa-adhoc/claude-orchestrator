@@ -131,6 +131,9 @@ def launch(tool, args, cwd):
 
 
 def row(job):
+    # Interactive sessions have no id: a None job must not match them.
+    if not job:
+        return None
     return next((s for s in agents(all_=True) if s.get("id") == job), None)
 
 
@@ -216,7 +219,7 @@ def apply(tool, job, session_id, command, key, value, cwd, seconds=60, tries=2):
     stop and resume saves it.
     """
     for attempt in range(1, tries + 1):
-        if attempt > 1 or (row(job) or {}).get("pid"):
+        if job and (attempt > 1 or (row(job) or {}).get("pid")):
             stop(tool, job)
         job = resume(tool, session_id, command, cwd, job)
         if wait_saved(job, key, value, seconds):
